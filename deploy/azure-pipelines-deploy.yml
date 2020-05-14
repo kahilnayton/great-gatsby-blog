@@ -1,0 +1,62 @@
+# Node.js with React
+# Build a Node.js project that uses React.
+# Add steps that analyze code, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/javascript
+resources:
+  containers:
+  - container: terraform_container
+    image: lenisha/terraform-light
+
+pool:
+  vmImage: 'Ubuntu 16.04'
+
+container: terraform_container
+
+steps:
+
+- task: DownloadBuildArtifacts@0
+  inputs:
+    buildType: 'specific' # Options: current, specific
+    project: 'gatsby-blog' # Required when buildType == Specific
+    pipeline: 'great-gasby-blog' # Required when buildType == Specific
+    #specificBuildWithTriggering: false # Optional
+    #buildVersionToDownload: 'latest' # Required when buildType == Specific# Options: latest, latestFromBranch, specific
+    #branchName: 'refs/heads/master' # Required when buildType == Specific && BuildVersionToDownload == LatestFromBranch
+    #buildId: # Required when buildType == Specific && BuildVersionToDownload == Specific
+    #tags: # Optional
+    downloadType: 'single' # Options: single, specific
+    artifactName: 'drop' # Required when downloadType == Single
+    #itemPattern: '**' # Optional
+    downloadPath: '.' 
+    #parallelizationLimit: '8' # Optional
+
+
+- script: |
+    ls -la
+  displayName: 'Display contents'
+ 
+- script: |
+    az extension add --name storage-preview
+    az login --service-principal -u $(ARM_CLIENT_ID) -p $(ARM_CLIENT_SECRET) --tenant $(ARM_TENANT_ID)
+  displayName: 'Enable AZ extension and Login'
+
+- script: |
+    cd deploy/terraform
+    terraform init -backend-config=backend.tfvars
+    terraform apply -auto-approve -var dns_name=$(BLOB_NAME)
+  displayName: 'Terraform init and apply'
+  env:
+      ARM_TENANT_ID: $(ARM_TENANT_ID)
+      ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+      ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+      ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+      ARM_ACCESS_KEY: $(ARM_ACCESS_KEY)
+      
+
+- script: |
+    az storage blob delete-batch -s \$web --account-name $(BLOB_NAME)
+  displayName: 'clean content'
+
+- script: |
+    az storage blob upload-batch -s drop -d \$web --account-name $(BLOB_NAME)
+  displayName: 'copy content and site is ready https://$(BLOB_NAME).azureedge.net/index.html'
